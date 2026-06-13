@@ -7,6 +7,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 
@@ -22,7 +23,7 @@ public class OtpHasher
     ;
 //    SecretKeySpec key=new SecretKeySpec(pepper.getBytes(StandardCharsets.UTF_8),"HmacSHA256");
 
-    public String hashOtp(String email, String code) throws NoSuchAlgorithmException
+    public String hashOtp(String email, String code)
     {
         try
         {
@@ -36,5 +37,11 @@ public class OtpHasher
             throw new IllegalStateException("Couldn't compute Hmac: ",e);
         }
 
+    }
+
+    public boolean matches(String email, String code, String expectedHmac) {
+        byte[] actual = hashOtp(email, code).getBytes(StandardCharsets.UTF_8);
+        byte[] expected = expectedHmac.getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(actual, expected);
     }
 }

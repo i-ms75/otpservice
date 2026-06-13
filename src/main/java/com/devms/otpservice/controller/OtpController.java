@@ -1,5 +1,6 @@
 package com.devms.otpservice.controller;
 
+import com.devms.otpservice.dto.VerifyOtp;
 import com.devms.otpservice.service.OtpSerVice;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,8 +22,9 @@ public class OtpController {
     }
 
     @PostMapping("api/verify")
-    public String verifyOtp()
+    public String verifyOtp(@RequestBody VerifyOtp verifyOtp)
     {
-        return "otp verified";
+        return otpService.verifyOtp(verifyOtp.getRequestId(),verifyOtp.getOtps());
+//        return "otp verified";
     }
 }

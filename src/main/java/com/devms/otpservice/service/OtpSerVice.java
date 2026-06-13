@@ -3,11 +3,10 @@ package com.devms.otpservice.service;
 import com.devms.otpservice.Components.OtpHasher;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-
 import java.security.GeneralSecurityException;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.List;
@@ -31,14 +30,7 @@ public class OtpSerVice
         for(String email: adminEmail)
         {
             String sentOtp=generateOtp();
-            try
-            {
-                hashedOtps.put(email,otpHasher.hashOtp(email,sentOtp));
-            }
-            catch (GeneralSecurityException e)
-            {
-                throw new IllegalStateException("Couldn't perform otp hashing: ",e);
-            }
+            hashedOtps.put(email,otpHasher.hashOtp(email,sentOtp));
             System.out.println("key: "+key+" email: "+email+" OTP: "+sentOtp);
 
             emailService.sendEmail(email,"Otp service", "Your otp to approve vault data update is: "+sentOtp);
@@ -59,6 +51,24 @@ public class OtpSerVice
 
     public String verifyOtp(String requestId, List<String> receivedOtps)
     {
-        return "OTPs verification successful";
+        String key="OTP:"+requestId;
+        HashOperations<String,String,String> ops=redisTemplate.opsForHash();
+
+        for(String email: adminEmail)
+        {
+            String storedHash=ops.get(key,email);
+            String match=receivedOtps.stream()
+                    .filter(code -> otpHasher.matches(email,code,storedHash))
+                    .findFirst()
+                    .orElse(null);
+            if (match==null)
+            {
+                return "OTP verification failed";
+            }
+
+        }
+
+
+        return "OTP verification successful";
     }
 }
