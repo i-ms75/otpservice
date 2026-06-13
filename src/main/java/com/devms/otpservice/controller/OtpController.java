@@ -21,6 +21,10 @@ public class OtpController {
     @PostMapping("api/verify")
     public String verifyOtp(@RequestBody VerifyOtp verifyOtp)
     {
+        if (verifyOtp.getOtps().size() != 3)
+        {
+            return "Invalid size of otps, please send only the otps from the actual approvers";
+        }
         return otpService.verifyOtp(verifyOtp.getRequestId(),verifyOtp.getOtps());
     }
 }
