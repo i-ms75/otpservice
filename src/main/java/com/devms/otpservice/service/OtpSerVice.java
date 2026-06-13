@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.types.Expiration;
 import org.springframework.stereotype.Service;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
@@ -35,6 +36,7 @@ public class OtpSerVice
 
             emailService.sendEmail(email,"Otp service", "Your otp to approve vault data update is: "+sentOtp);
             redisTemplate.opsForHash().putAll(key,hashedOtps);
+            redisTemplate.expire(key, Expiration.milliseconds(300000));
         }
         hashedOtps.forEach(
                 (key1,value) ->
