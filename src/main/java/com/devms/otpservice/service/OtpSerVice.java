@@ -51,15 +51,19 @@ public class OtpSerVice
         return String.format("%06d",secureRandom.nextInt(1_000_000));
     }
 
-    public String verifyOtp(String requestId, List<String> receivedOtps)
+    public String verifyOtp(String requestId, List<String> receivedOtp)
     {
         String key="OTP:"+requestId;
+        if(!redisTemplate.hasKey(key))
+        {
+            return "Key not found or has already expired";
+        }
         HashOperations<String,String,String> ops=redisTemplate.opsForHash();
 
         for(String email: adminEmail)
         {
             String storedHash=ops.get(key,email);
-            String match=receivedOtps.stream()
+            String match=receivedOtp.stream()
                     .filter(code -> otpHasher.matches(email,code,storedHash))
                     .findFirst()
                     .orElse(null);
