@@ -15,7 +15,7 @@ public class OtpController {
     public String generateOtp()
     {
 
-        return  otpService.generateOtp();
+        return  otpService.sendOtp();
 //        return "ok";
     }
 
