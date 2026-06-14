@@ -1,0 +1,84 @@
+name: Deploy to EC2
+
+# Builds and runs the stack directly on the EC2 instance over SSH.
+# No container registry: the box clones this repo and runs `docker compose up --build`.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never let two deploys run at once against the same box.
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prd          # secrets live under the "prd" GitHub Environment
+    permissions:
+      contents: read          # lets the job's GITHUB_TOKEN clone this repo on the box
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          # Forwarded into the remote script via `envs:` below.
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          GIT_BRANCH: ${{ github.ref_name }}
+          SPRING_DATA_REDIS_PASSWORD: ${{ secrets.SPRING_DATA_REDIS_PASSWORD }}
+          SPRING_MAIL_USERNAME: ${{ secrets.SPRING_MAIL_USERNAME }}
+          SPRING_MAIL_PASSWORD: ${{ secrets.SPRING_MAIL_PASSWORD }}
+          PEPPER: ${{ secrets.PEPPER }}
+          APPROVERS: ${{ secrets.APPROVERS }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || '22' }}
+          envs: GH_TOKEN,REPO,GIT_BRANCH,SPRING_DATA_REDIS_PASSWORD,SPRING_MAIL_USERNAME,SPRING_MAIL_PASSWORD,PEPPER,APPROVERS
+          script: |
+            set -e
+            APP_DIR="$HOME/otpservice"
+
+            echo "==> Ensuring prerequisites (git, docker)"
+            if ! command -v git >/dev/null 2>&1; then
+              sudo apt-get update -y && sudo apt-get install -y git
+            fi
+            if ! command -v docker >/dev/null 2>&1; then
+              curl -fsSL https://get.docker.com | sudo sh
+            fi
+
+            echo "==> Fetching latest code ($GIT_BRANCH)"
+            # GITHUB_TOKEN is short-lived (expires when this job ends) and the clone
+            # is wiped each run, so the token is never persisted on the box.
+            rm -rf "$APP_DIR"
+            git clone --depth 1 --branch "$GIT_BRANCH" \
+              "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$APP_DIR"
+            cd "$APP_DIR"
+
+            echo "==> Writing runtime secrets to .env"
+            {
+              echo "SPRING_DATA_REDIS_PASSWORD=${SPRING_DATA_REDIS_PASSWORD}"
+              echo "SPRING_MAIL_USERNAME=${SPRING_MAIL_USERNAME}"
+              echo "SPRING_MAIL_PASSWORD=${SPRING_MAIL_PASSWORD}"
+              echo "PEPPER=${PEPPER}"
+              echo "APPROVERS=${APPROVERS}"
+            } > .env
+            chmod 600 .env
+
+            echo "==> Building and starting containers"
+            sudo docker compose up -d --build --remove-orphans
+            sudo docker image prune -f
+
+            echo "==> Waiting for the app to report healthy"
+            for i in $(seq 1 40); do
+              if curl -fsS http://localhost:8080/actuator/health 2>/dev/null | grep -q '"status":"UP"'; then
+                echo "==> Deployment healthy"
+                exit 0
+              fi
+              sleep 3
+            done
+            echo "!! App did not become healthy in time; recent logs:"
+            sudo docker compose logs --tail=80 app
+            exit 1

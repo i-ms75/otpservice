@@ -1,0 +1,22 @@
+# Build output
+target/
+build/
+
+# IDE / tooling
+.idea/
+.vscode/
+*.iml
+.mvn/wrapper/maven-wrapper.jar
+
+# VCS
+.git/
+.gitignore
+.gitattributes
+
+# Docs / local files
+HELP.md
+implementation-plan.md
+*.md
+.env
+.env.*
+!.env.example
