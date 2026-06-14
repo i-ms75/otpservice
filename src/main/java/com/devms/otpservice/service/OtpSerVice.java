@@ -23,26 +23,17 @@ public class OtpSerVice
     @Value("${approvers}")
     List<String> adminEmail;
 
-    Map<String, String> hashedOtps=new HashMap<>();
-
     public String sendOtp(String requestId) {
+        Map<String, String> hashedOtps=new HashMap<>();
         String key="OTP:"+requestId;
         for(String email: adminEmail)
         {
             String sentOtp=generateOtp();
             hashedOtps.put(email,otpHasher.hashOtp(email,sentOtp));
-            System.out.println("key: "+key+" email: "+email+" OTP: "+sentOtp);
-
             emailService.sendEmail(email,"Otp service", "Your otp to approve vault data update is: "+sentOtp);
             redisTemplate.opsForHash().putAll(key,hashedOtps);
             redisTemplate.expire(key, Expiration.milliseconds(300000));
         }
-        hashedOtps.forEach(
-                (key1,value) ->
-                {
-                    System.out.println("Key: "+key1+" Value: "+value);
-                }
-        );
         return "otp sent successfully";
     }
 
@@ -68,11 +59,18 @@ public class OtpSerVice
 
 
         Integer MAX_ATTEMPTS = 3;
-        if(attempts> MAX_ATTEMPTS)
-        {
-            redisTemplate.delete(key);
-            return "Maximum retries exceeded, please request for new otp";
+        try {
+            if(attempts> MAX_ATTEMPTS)
+            {
+                redisTemplate.delete(key);
+                return "Maximum retries exceeded, please request for new otp";
+            }
         }
+        catch (Exception e)
+        {
+            return "Error occured! Please tr again";
+        }
+
         for(String email: adminEmail)
         {
             String storedHash=ops.get(key,email);
