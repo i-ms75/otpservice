@@ -4,8 +4,9 @@ name: Deploy to EC2
 # No container registry: the box clones this repo and runs `docker compose up --build`.
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - '*.*.*'          # deploy only when a version tag is pushed, e.g. v1.0.0
+  workflow_dispatch:  # plus manual runs (pick a tag/branch in the Actions UI)
 
 # Never let two deploys run at once against the same box.
 concurrency:
@@ -25,7 +26,7 @@ jobs:
           # Forwarded into the remote script via `envs:` below.
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          GIT_BRANCH: ${{ github.ref_name }}
+          GIT_REF: ${{ github.ref_name }}   # the pushed tag (or chosen ref on manual run)
           SPRING_DATA_REDIS_PASSWORD: ${{ secrets.SPRING_DATA_REDIS_PASSWORD }}
           SPRING_MAIL_USERNAME: ${{ secrets.SPRING_MAIL_USERNAME }}
           SPRING_MAIL_PASSWORD: ${{ secrets.SPRING_MAIL_PASSWORD }}
@@ -36,7 +37,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: ${{ secrets.EC2_SSH_PORT || '22' }}
-          envs: GH_TOKEN,REPO,GIT_BRANCH,SPRING_DATA_REDIS_PASSWORD,SPRING_MAIL_USERNAME,SPRING_MAIL_PASSWORD,PEPPER,APPROVERS
+          envs: GH_TOKEN,REPO,GIT_REF,SPRING_DATA_REDIS_PASSWORD,SPRING_MAIL_USERNAME,SPRING_MAIL_PASSWORD,PEPPER,APPROVERS
           script: |
             set -e
             APP_DIR="$HOME/otpservice"
@@ -49,11 +50,12 @@ jobs:
               curl -fsSL https://get.docker.com | sudo sh
             fi
 
-            echo "==> Fetching latest code ($GIT_BRANCH)"
+            echo "==> Fetching code at $GIT_REF"
             # GITHUB_TOKEN is short-lived (expires when this job ends) and the clone
             # is wiped each run, so the token is never persisted on the box.
+            # --branch accepts a tag name too, so this checks out the tagged commit.
             rm -rf "$APP_DIR"
-            git clone --depth 1 --branch "$GIT_BRANCH" \
+            git clone --depth 1 --branch "$GIT_REF" \
               "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$APP_DIR"
             cd "$APP_DIR"
 
