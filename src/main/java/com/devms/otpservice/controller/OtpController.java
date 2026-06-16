@@ -23,7 +23,6 @@ public class OtpController {
     @PostMapping("api/verify")
     public ResponseEntity<String> verifyOtp(@RequestBody VerifyOtp verifyOtp)
     {
-        ResponseEntity<String> responseEntity;
         if (verifyOtp.getOtps().size() != 3)
         {
             return new ResponseEntity<>("Invalid size of otps, please send only the otps from the actual approvers", HttpStatus.BAD_REQUEST);

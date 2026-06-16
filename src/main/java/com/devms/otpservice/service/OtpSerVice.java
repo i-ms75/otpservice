@@ -45,7 +45,6 @@ public class OtpSerVice
 
     public ResponseEntity<String> verifyOtp(String requestId, List<String> receivedOtp)
     {
-        ResponseEntity<String> responseEntity;
         String key="OTP:"+requestId;
         String attemptsKey="otpAttempt:"+requestId;
         if(!redisTemplate.hasKey(key))
