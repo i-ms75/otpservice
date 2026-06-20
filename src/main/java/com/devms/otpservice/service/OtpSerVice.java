@@ -1,6 +1,7 @@
 package com.devms.otpservice.service;
 import com.devms.otpservice.Components.OtpHasher;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -16,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 @AllArgsConstructor
+@Slf4j
 public class OtpSerVice
 {
     private final StringRedisTemplate redisTemplate;
@@ -36,6 +38,7 @@ public class OtpSerVice
             redisTemplate.opsForHash().putAll(key,hashedOtps);
             redisTemplate.expire(key, Expiration.milliseconds(300000));
         }
+        log.info("OTP sent for request id: {}",requestId);
         return new ResponseEntity<>("otp sent successfully",HttpStatus.CREATED);
     }
 
@@ -49,6 +52,7 @@ public class OtpSerVice
         String attemptsKey="otpAttempt:"+requestId;
         if(!redisTemplate.hasKey(key))
         {
+            log.info("Key not found or has already expired for request id: {}",requestId);
             return new ResponseEntity<>("Key not found or has already expired", HttpStatus.NOT_FOUND);
         }
         HashOperations<String,String,String> ops=redisTemplate.opsForHash();
@@ -65,12 +69,14 @@ public class OtpSerVice
             if(attempts> MAX_ATTEMPTS)
             {
                 redisTemplate.delete(key);
+                log.info("Maximum retry exceeded for request id : {}",requestId);
                 return new ResponseEntity<>("Maximum retries exceeded, please request for new otp",HttpStatus.TOO_MANY_REQUESTS);
             }
         }
         catch (Exception e)
         {
-            return new ResponseEntity<>("Error occured! Please tr again",HttpStatus.INTERNAL_SERVER_ERROR);
+            log.info("Error occured while varifying otp for request id: {} with status code: {}",requestId,HttpStatus.INTERNAL_SERVER_ERROR);
+            return new ResponseEntity<>("Error occured! Please try again",HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
         for(String email: adminEmail)
@@ -82,11 +88,13 @@ public class OtpSerVice
                     .orElse(null);
             if (match==null)
             {
+                log.info("OTP verification failed for request id: {}",requestId);
                 return new ResponseEntity<>("OTP verification failed, remaining attempts is "+(MAX_ATTEMPTS-attempts),HttpStatus.NOT_ACCEPTABLE);
             }
 
         }
         redisTemplate.delete(key);
+        log.info("OTP verified successfully for request id: {}",requestId);
         return new ResponseEntity<>( "OTP verification successful",HttpStatus.OK);
     }
 }
