@@ -47,7 +47,7 @@ exactly **3**).
 | Email          | Gmail SMTP via `JavaMailSender` (sent synchronously) |
 | Code hashing   | HMAC-SHA256 with a server-side pepper              |
 | Build          | Maven (wrapper included)                           |
-| Deploy         | Docker / Docker Compose; GitHub Actions → EC2      |
+| Deploy         | GitHub Actions builds an arm64 image → GHCR → EC2 pulls it |
 
 ---
 
@@ -164,11 +164,25 @@ openssl rand -base64 32
 
 ### 3. Run with Docker Compose (recommended)
 
-Builds the app image, starts Redis (password-protected), and starts the service:
+Compose references the image published to GHCR (`ghcr.io/i-ms75/otpservice`), so
+this pulls the latest released image, starts Redis (password-protected), and
+starts the service:
 
 ```bash
-docker compose up --build
+docker compose up -d
 ```
+
+> The image is built in CI (see [Deployment](#deployment)) — Compose no longer
+> builds it. To run uncommitted local changes, build and tag the image yourself
+> first, then start the stack:
+>
+> ```bash
+> docker build -t ghcr.io/i-ms75/otpservice:latest .
+> docker compose up -d
+> ```
+>
+> Or skip Docker for the app entirely and use the
+> [local run](#4-run-locally-without-docker) path below.
 
 The API is then available at `http://localhost:8080`. Check health with:
 
@@ -246,7 +260,7 @@ src/main/java/com/devms/otpservice/
 src/main/resources/application.properties   # config (approvers, mail, redis, pepper)
 Dockerfile                                   # multi-stage build → slim JRE image
 docker-compose.yml                           # app + Redis
-.github/workflows/deploy.yml                 # deploy to EC2 on version tag push
+.github/workflows/deploy.yml                 # build image → GHCR, then deploy to EC2 (on tag)
 ```
 
 ---
@@ -270,11 +284,23 @@ e.g. `spring.data.redis.host` → `SPRING_DATA_REDIS_HOST`):
 
 ## Deployment
 
-A push of a **version tag** (e.g. `1.0.0`) triggers
-[.github/workflows/deploy.yml](.github/workflows/deploy.yml), which SSHes into an
-EC2 host, clones the tagged commit, writes `.env` from GitHub Environment secrets,
-and runs `docker compose up -d --build`. Manual runs are also available via
-`workflow_dispatch`.
+Pushing a **version tag** (e.g. `1.0.0`) triggers
+[.github/workflows/deploy.yml](.github/workflows/deploy.yml), which runs two jobs:
+
+1. **build** — on a native `arm64` runner (matching the Graviton EC2 host), builds
+   the image from the multi-stage [Dockerfile](Dockerfile) and pushes it to GHCR as
+   `ghcr.io/i-ms75/otpservice:<tag>` and `:latest`. Uses the built-in `GITHUB_TOKEN`,
+   so no registry credentials are required.
+2. **deploy** — SSHes into the EC2 host, clones the tag for `docker-compose.yml`,
+   writes `.env` from GitHub Environment secrets, logs in to GHCR with the job's
+   short-lived token, then `docker compose pull && docker compose up -d`. No build
+   happens on the box.
+
+Manual runs are also available via `workflow_dispatch`.
+
+> On the **first** deploy, GHCR creates the package as **private** even for a public
+> repo; the deploy step's `docker login` still pulls it. Make the package public in
+> the repo's Packages settings if you want unauthenticated pulls.
 
 Required secrets (under the `prd` GitHub Environment): `EC2_HOST`, `EC2_USER`,
 `EC2_SSH_KEY`, optionally `EC2_SSH_PORT`, plus the runtime secrets
