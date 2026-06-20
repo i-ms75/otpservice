@@ -248,7 +248,7 @@ java -jar target/otpservice-0.0.1-SNAPSHOT.jar
 ## Project layout
 
 ```
-src/main/java/com/devms/otpservice/
+src/main/java/com/sudodev/otpservice/
 ├── OtpserviceApplication.java        # Spring Boot entrypoint
 ├── controller/OtpController.java     # /api/generate, /api/verify
 ├── service/

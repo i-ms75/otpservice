@@ -1,4 +1,4 @@
-package com.devms.otpservice.dto;
+package com.sudodev.otpservice.dto;
 import lombok.Getter;
 import lombok.Setter;
 

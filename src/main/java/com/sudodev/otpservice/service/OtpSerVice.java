@@ -1,5 +1,5 @@
-package com.devms.otpservice.service;
-import com.devms.otpservice.Components.OtpHasher;
+package com.sudodev.otpservice.service;
+import com.sudodev.otpservice.Components.OtpHasher;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,7 +23,7 @@ public class OtpSerVice
     private final StringRedisTemplate redisTemplate;
     private final SecureRandom secureRandom=new SecureRandom();
     private final OtpHasher otpHasher;
-    EmailService emailService;
+    com.sudodev.otpservice.service.EmailService emailService;
     @Value("${approvers}")
     List<String> adminEmail;
 

@@ -1,4 +1,4 @@
-package com.devms.otpservice.service;
+package com.sudodev.otpservice.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.SimpleMailMessage;
