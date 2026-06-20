@@ -30,6 +30,5 @@ public class EmailService {
         {
             log.error("Error occured while sending email.", e);
         }
-
     }
 }
