@@ -1,32 +1,70 @@
 name: Deploy to EC2
-
-# Builds and runs the stack directly on the EC2 instance over SSH.
-# No container registry: the box clones this repo and runs `docker compose up --build`.
 on:
   push:
     tags:
-      - '*.*.*'          # deploy only when a version tag is pushed, e.g. v1.0.0
-  workflow_dispatch:  # plus manual runs (pick a tag/branch in the Actions UI)
+      - '*.*.*'
+  workflow_dispatch:
 
 # Never let two deploys run at once against the same box.
 concurrency:
   group: deploy-ec2
   cancel-in-progress: false
 
+env:
+  # ghcr.io/i-ms75/otpservice — GHCR requires a lowercase path, which this repo already is.
+  IMAGE: ghcr.io/${{ github.repository }}
+
 jobs:
+  build:
+    # Native arm64 runner (free for public repos) so the image matches the t4g
+    # (Graviton) box — no QEMU emulation, fast Maven build.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write          # push the image to GHCR
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Runner is arm64, so the default build target is linux/arm64.
+          tags: |
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment: prd          # secrets live under the "prd" GitHub Environment
     permissions:
-      contents: read          # lets the job's GITHUB_TOKEN clone this repo on the box
+      contents: read          # clone this repo on the box (for docker-compose.yml)
+      packages: read          # the forwarded token pulls the image from GHCR
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
           # Forwarded into the remote script via `envs:` below.
           GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
           REPO: ${{ github.repository }}
           GIT_REF: ${{ github.ref_name }}   # the pushed tag (or chosen ref on manual run)
+          IMAGE: ${{ env.IMAGE }}
+          IMAGE_TAG: ${{ github.ref_name }}
           SPRING_DATA_REDIS_PASSWORD: ${{ secrets.SPRING_DATA_REDIS_PASSWORD }}
           SPRING_MAIL_USERNAME: ${{ secrets.SPRING_MAIL_USERNAME }}
           SPRING_MAIL_PASSWORD: ${{ secrets.SPRING_MAIL_PASSWORD }}
@@ -37,7 +75,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: ${{ secrets.EC2_SSH_PORT || '22' }}
-          envs: GH_TOKEN,REPO,GIT_REF,SPRING_DATA_REDIS_PASSWORD,SPRING_MAIL_USERNAME,SPRING_MAIL_PASSWORD,PEPPER,APPROVERS
+          envs: GH_TOKEN,GH_ACTOR,REPO,GIT_REF,IMAGE,IMAGE_TAG,SPRING_DATA_REDIS_PASSWORD,SPRING_MAIL_USERNAME,SPRING_MAIL_PASSWORD,PEPPER,APPROVERS
           script: |
             set -e
             APP_DIR="$HOME/otpservice"
@@ -50,17 +88,19 @@ jobs:
               curl -fsSL https://get.docker.com | sudo sh
             fi
 
-            echo "==> Fetching code at $GIT_REF"
-            # GITHUB_TOKEN is short-lived (expires when this job ends) and the clone
-            # is wiped each run, so the token is never persisted on the box.
-            # --branch accepts a tag name too, so this checks out the tagged commit.
+            echo "==> Fetching deploy config at $GIT_REF"
+            # Only docker-compose.yml is needed on the box now (no source build here).
+            # GITHUB_TOKEN is short-lived and the clone is wiped each run, so it is
+            # never persisted. --branch accepts a tag name too.
             rm -rf "$APP_DIR"
             git clone --depth 1 --branch "$GIT_REF" \
               "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$APP_DIR"
             cd "$APP_DIR"
 
-            echo "==> Writing runtime secrets to .env"
+            echo "==> Writing runtime config to .env"
             {
+              echo "IMAGE=${IMAGE}"
+              echo "IMAGE_TAG=${IMAGE_TAG}"
               echo "SPRING_DATA_REDIS_PASSWORD=${SPRING_DATA_REDIS_PASSWORD}"
               echo "SPRING_MAIL_USERNAME=${SPRING_MAIL_USERNAME}"
               echo "SPRING_MAIL_PASSWORD=${SPRING_MAIL_PASSWORD}"
@@ -69,9 +109,17 @@ jobs:
             } > .env
             chmod 600 .env
 
-            echo "==> Building and starting containers"
-            sudo docker compose up -d --build --remove-orphans
+            # Login handles the case where the GHCR package is private (the default on
+            # first push); harmless once the package is made public. Uses the job's
+            # short-lived token, so no long-lived registry secret lives on the box.
+            echo "==> Logging in to GHCR"
+            echo "${GH_TOKEN}" | sudo docker login ghcr.io -u "${GH_ACTOR}" --password-stdin
+
+            echo "==> Pulling and starting containers"
+            sudo docker compose pull
+            sudo docker compose up -d --remove-orphans
             sudo docker image prune -f
+            sudo docker logout ghcr.io || true
 
             echo "==> Waiting for the app to report healthy"
             for i in $(seq 1 40); do

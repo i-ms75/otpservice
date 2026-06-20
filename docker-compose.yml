@@ -12,14 +12,18 @@ services:
       retries: 5
 
   app:
-    build: .
-    image: otpservice:latest
+    # Image is built and pushed by CI; the box only pulls it. Falls back to the
+    # GHCR latest tag for ad-hoc local `docker compose up`.
+    image: ${IMAGE:-ghcr.io/i-ms75/otpservice}:${IMAGE_TAG:-latest}
     depends_on:
       redis:
         condition: service_healthy
     ports:
       - "8080:8080"
     restart: unless-stopped
+    # Cap the container so -XX:MaxRAMPercentage (75%) sizes the heap against this
+    # limit, not the whole host — leaves room for a second service on the t4g.medium.
+    mem_limit: 768m
     environment:
       # Connection to the redis service in this compose network
       SPRING_DATA_REDIS_HOST: redis
